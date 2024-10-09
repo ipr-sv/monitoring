@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Status Dashboard</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            background-color: #333;
+            color: white;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background-color: #222;
+        }
+        .pat-container {
+            display: flex;
+            align-items: center;
+        }
+        #pat-input {
+            padding: 5px;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        #clear-pat {
+            padding: 5px;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        #refresh-info {
+            font-size: 16px;
+            white-space: nowrap;
+        }
+        .container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 10px;
+        }
+        .box {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            margin: 5px 0;
+            padding: 20px;
+            box-sizing: border-box;
+            flex-grow: 1;
+            width: 100%;
+        }
+        .box-title {
+            font-size: 3vmin;
+            text-align: left;
+            flex: 1;
+        }
+        .box-status {
+            font-size: 3vmin;
+            text-align: right;
+            flex: 1;
+        }
+        .green {
+            background-color: #4CAF50;
+        }
+        .red {
+            background-color: #F44336;
+        }
+        .yellow {
+            background-color: #FFEB3B;
+        }
+        @media (max-width: 768px) {
+            .top-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .pat-container {
+                margin-bottom: 10px;
+            }
+            #refresh-info {
+                align-self: flex-end;
+            }
+            .box {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .box-title, .box-status {
+                width: 100%;
+                text-align: left;
+                margin-bottom: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="top-bar">
+    <div class="pat-container">
+        <input type="password" id="pat-input" placeholder="Enter GitHub PAT" />
+        <button id="clear-pat">Clear PAT</button>
+        <div id="refresh-info">
+            <span id="next-refresh">Update in 60 secs</span>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <div id="production-box" class="box">
+        <div class="box-title">E2E Production</div>
+        <div class="box-status">Loading...</div>
+    </div>
+    <div id="staging-box" class="box">
+        <div class="box-title">E2E Staging</div>
+        <div class="box-status">Loading...</div>
+    </div>
+    <div id="repo-linter-box" class="box">
+        <div class="box-title">Repo Linter</div>
+        <div class="box-status">Loading...</div>
+    </div>
+</div>
+
+<script>
+// Define owner/repo/workflow names
+const renewalsOwner = 'ipr42';
+const renewalsRepo = 'renewals-app-v2';
+const productionWorkflow = 'e2e_cron_production.yaml';
+const stagingWorkflow = 'e2e_cron_staging.yaml';
+const repoLinterOwner = 'ipr42';
+const repoLinterRepo = 'repo-linter';
+const repoLinterWorkflow = 'CI.yml';
+
+let nextRefreshCountdown = 60;
+
+// Function to get the GitHub PAT from local storage
+function getGitHubPAT() {
+    return localStorage.getItem('github_pat');
+}
+
+// Function to set the GitHub PAT in local storage
+function setGitHubPAT(pat) {
+    localStorage.setItem('github_pat', pat);
+}
+
+// Initialize PAT input field
+document.getElementById('pat-input').value = getGitHubPAT() || '';
+document.getElementById('pat-input').addEventListener('change', (e) => {
+    setGitHubPAT(e.target.value);
+    refreshStatuses();
+});
+
+// Clear PAT button
+document.getElementById('clear-pat').addEventListener('click', () => {
+    localStorage.removeItem('github_pat');
+    document.getElementById('pat-input').value = '';
+    refreshStatuses();
+});
+
+// Helper function to fetch the latest completed workflow run status
+async function fetchStatus(owner, repo, workflow, elementId) {
+    const pat = getGitHubPAT();
+    if (!pat) {
+        document.getElementById(elementId).querySelector('.box-status').textContent = "Enter GitHub PAT";
+        return;
+    }
+
+    const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/runs?per_page=10`;
+    
+    try {
+        const response = await fetch(url, {
+          headers:{
+              Authorization:`token ${pat}`
+          }
+       });
+        
+       if (!response.ok) throw new Error(`Error fetching data (${response.status})`);
+        
+       const data = await response.json();
+       
+       if (!data.workflow_runs.length) throw new Error('No runs found');
+       
+       // Find the latest completed run
+       const completedRuns = data.workflow_runs.filter(run => run.status === 'completed');
+       const latestCompletedRun = completedRuns.length > 0 ? completedRuns[0] : null;
+       
+       // Check if there's a currently running job
+       const runningJob = data.workflow_runs.find(run => run.status === 'in_progress');
+       
+       // Determine box color and status text
+       let boxClass = '';
+       let statusText = '';
+       
+       if (latestCompletedRun) {
+           switch(latestCompletedRun.conclusion) {
+               case "success":
+                   boxClass = "green";
+                   statusText = "SUCCESS";
+                   break;
+               case "failure":
+                   boxClass = "red";
+                   statusText = "FAILURE";
+                   break;
+               default:
+                   boxClass = "yellow";
+                   statusText = latestCompletedRun.conclusion.toUpperCase();
+                   break;
+           }
+       } else {
+           boxClass = "yellow";
+           statusText = "NO COMPLETED RUNS";
+       }
+       
+       // If there's a running job, indicate it in the status text
+       if (runningJob) {
+           statusText += " (RUNNING)";
+       }
+
+       // Update DOM element color and text content
+       const boxElement = document.getElementById(elementId);
+       boxElement.className = `box ${boxClass}`;
+       boxElement.querySelector('.box-status').textContent = statusText;
+
+   } catch(error) {
+      console.error(`Failed to fetch workflow run info for ${workflow}:`, error);
+      document.getElementById(elementId).querySelector('.box-status').textContent = "Error loading";
+   }
+}
+
+// Function to update the "next refresh" countdown
+function updateNextRefreshCountdown() {
+    nextRefreshCountdown--;
+    if (nextRefreshCountdown < 0) {
+        nextRefreshCountdown = 60;
+    }
+    document.getElementById('next-refresh').textContent = `Update in ${nextRefreshCountdown} sec${nextRefreshCountdown !== 1 ? 's' : ''}`;
+}
+
+// Fetch statuses every minute and update page.
+function refreshStatuses() {
+    fetchStatus(renewalsOwner, renewalsRepo, productionWorkflow, 'production-box');
+    fetchStatus(renewalsOwner, renewalsRepo, stagingWorkflow, 'staging-box');
+    fetchStatus(repoLinterOwner, repoLinterRepo, repoLinterWorkflow, 'repo-linter-box');
+    nextRefreshCountdown = 60;
+    updateNextRefreshCountdown();
+}
+
+// Refresh every minute, update "next refresh" countdown every second
+refreshStatuses();
+setInterval(refreshStatuses, 60000);
+setInterval(updateNextRefreshCountdown, 1000);
+
+</script>
+
+</body>
+</html>

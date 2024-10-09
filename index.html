@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring Pages</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            background-color: #333;
+            color: #fff;
+            overflow: hidden;
+        }
+        .main-container {
+            display: flex;
+            height: 100vh;
+        }
+        .vertical-bar {
+            width: 50%;
+            border-left: 1px solid #555;
+            box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+        }
+        .monitoring-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .frame-container {
+            border: 1px solid #555;
+            padding: 10px;
+            flex: 1;
+            background-color: #222;
+            display: flex;
+            flex-direction: column;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        h2 {
+            margin: 0 0 10px 0;
+            font-size: 1.5rem;
+        }
+        h2 span {
+            font-size: 0.8rem;
+            color: #aaa;
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="monitoring-container">
+            <!-- Staging Environment -->
+            <div class="frame-container">
+                <h2>Staging <span id="staging-time">(0s ago)</span></h2>
+                <iframe id="staging-iframe" src="https://team42monitoringdev-2478b9002ff2.herokuapp.com/broker"></iframe>
+            </div>
+
+            <!-- Production Environment -->
+            <div class="frame-container">
+                <h2>Production <span id="production-time">(0s ago)</span></h2>
+                <iframe id="production-iframe" src="https://team42monitoring-3f2107d1a552.herokuapp.com/broker"></iframe>
+            </div>
+        </div>
+        <div class="vertical-bar">
+            <iframe src="ghdash.html"></iframe>
+        </div>
+    </div>
+
+    <script>
+        let lastRefreshTime = Date.now();
+
+        function updateTimeSinceRefresh() {
+            const now = Date.now();
+            const secondsSinceRefresh = Math.floor((now - lastRefreshTime) / 1000);
+            document.getElementById('staging-time').textContent = `(updated ${secondsSinceRefresh}s ago)`;
+            document.getElementById('production-time').textContent = `(updated ${secondsSinceRefresh}s ago)`;
+        }
+
+        function refreshIframes() {
+            document.getElementById('staging-iframe').src += '';
+            document.getElementById('production-iframe').src += '';
+            lastRefreshTime = Date.now();
+        }
+
+        // Refresh iframes every 10 seconds
+        const wait_time_in_seconds = 10;
+        const wait_time_in_milliseconds = wait_time_in_seconds * 1000;
+        setInterval(refreshIframes, wait_time_in_milliseconds);
+
+        // Update time since last refresh every second
+        setInterval(updateTimeSinceRefresh, 1000);
+
+        // Initial refresh
+        refreshIframes();
+    </script>
+</body>
+</html>
